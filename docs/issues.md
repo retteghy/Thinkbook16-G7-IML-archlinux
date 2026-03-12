@@ -38,18 +38,27 @@ without ACPI involvement on this hardware).
 
 ## Intermittent boot hang (GPU driver conflict)
 
-**Symptom:** System occasionally hangs at boot with a black screen.
+**Symptom:** System intermittently hangs at boot with a black screen. Inconsistent —
+sometimes boots fine, sometimes hangs completely.
 **Cause:** Both `i915` and `xe` kernel modules claim the Intel Arc (Meteor Lake-P)
-GPU. When `xe` loads first or both race, the display subsystem can deadlock.
-**Fix:** Blacklist the `xe` driver — `i915` handles Meteor Lake reliably:
+GPU. On some boots they race and the display subsystem deadlocks.
+Additionally, Panel Self Refresh (PSR) in the `i915` driver can cause display
+initialization hangs on this hardware.
 
-```bash
-echo "blacklist xe" > /etc/modprobe.d/blacklist-xe.conf
-mkinitcpio -P
+**Failed attempts:**
+- `acpi_backlight=native` — unrelated but also broke boot by disabling backlight init
+- `i915.modeset=0` — did not resolve the hang
+- `blacklist xe` via `/etc/modprobe.d/` — not reliable enough during early initramfs
+
+**Fix:** Add both parameters directly to the kernel command line (applied before
+any module loading, bypassing initramfs):
+
+```
+module_blacklist=xe i915.enable_psr=0
 ```
 
-**Recovery:** If the system hangs at boot, add `i915.modeset=0` at the rEFInd
-boot menu (not `nomodeset` — that disables all KMS and breaks niri).
+**Recovery if boot hangs:** Add `i915.modeset=0` at the bootloader menu.
+Do **not** use `nomodeset` — it disables all KMS and breaks niri.
 
 ---
 
@@ -93,3 +102,23 @@ in `style.css`.
 ```bash
 systemctl --user enable --now pipewire-pulse
 ```
+
+---
+
+## Hibernate not available
+
+**Symptom:** `systemctl hibernate` fails.
+**Cause:** No swap space configured.
+**Fix:** See [installation.md — Hibernate setup](installation.md#hibernate-setup).
+
+---
+
+## Sleep states
+
+This CPU (Intel Meteor Lake) does not support S3 deep sleep — only s2idle is
+available for `mem` sleep. s2idle is unreliable as a laptop bag sleep state
+(fans may run, battery drains). Hibernate or hybrid-sleep are preferred.
+
+Current lid close behavior (configured in `config/logind/lid.conf`):
+- **On battery:** hibernate
+- **On AC:** hybrid-sleep (resume from RAM, falls back to disk if power lost)
